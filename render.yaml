@@ -1,0 +1,22 @@
+# Render Blueprint: New > Blueprint > pick this repo.
+services:
+  - type: web
+    name: dyslexia-screening-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: AUTO_RETRAIN
+        value: "false"
+      - key: RETRAIN_MIN_NEW_SAMPLES
+        value: "20"
+
+  - type: web
+    name: dyslexia-screening-ui
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile.ui
+    envVars:
+      - key: API_URL
+        sync: false   # set to the API URL, e.g. https://dyslexia-screening-api.onrender.com

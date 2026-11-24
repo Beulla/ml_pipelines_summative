@@ -1,0 +1,48 @@
+# docker compose up --build --scale api=3   (1, 2, 3 ... API replicas behind nginx)
+services:
+  api:
+    build: .
+    environment:
+      PYTHONUNBUFFERED: "1"
+      AUTO_RETRAIN: "false"
+    # Shared volumes: a model retrained in one replica is hot-reloaded by all.
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./logs:/app/logs
+    expose:
+      - "8000"
+
+  proxy:
+    image: nginx:alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8000:80"
+    depends_on:
+      - api
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    environment:
+      API_URL: http://proxy:80
+    ports:
+      - "8501:8501"
+    depends_on:
+      - proxy
+
+  locust:
+    image: locustio/locust
+    volumes:
+      - ./locust:/mnt/locust
+      - ./data:/mnt/data
+    working_dir: /mnt/locust
+    command: -f locustfile.py --host http://proxy:80
+    ports:
+      - "8089:8089"
+    depends_on:
+      - proxy
+    environment:
+      PYTHONPATH: /mnt

@@ -1,0 +1,10 @@
+.venv
+.git
+logs
+locust/results
+data/raw
+data/uploads
+data/uploads_used
+models/candidate
+notebook/.ipynb_checkpoints
+**/__pycache__

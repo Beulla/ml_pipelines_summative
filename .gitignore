@@ -1,0 +1,26 @@
+# Raw download (56 MB zip) — recreated by scripts/prepare_data.py
+data/raw/*
+!data/raw/.gitkeep
+!data/raw/README.md
+
+# data/train and data/test (preprocessed 128x128 PNGs, ~10 MB) ARE committed:
+# the deployed API needs them for retraining and live evaluation.
+data/uploads/
+data/uploads_used/
+data/feature_stats.csv
+
+# Production model files (.pt / .pkl, ~6 MB each) ARE committed. Scratch models are not.
+models/candidate/
+
+logs/*
+!logs/.gitkeep
+
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+.DS_Store
+Thumbs.db
+

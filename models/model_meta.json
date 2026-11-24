@@ -1,0 +1,65 @@
+{
+  "model_name": "dyslexia_cnn.pt",
+  "pkl_name": "dyslexia_cnn.pkl",
+  "architecture": "MobileNetV3-Small (ImageNet pre-trained) + 2-class head",
+  "img_size": 128,
+  "num_classes": 2,
+  "class_names": {
+    "0": "Non-dyslexic",
+    "1": "Dyslexic (at risk)"
+  },
+  "updated_at": "2026-11-24T11:42:44.744415+00:00",
+  "train_counts": {
+    "Non-dyslexic": 340,
+    "Dyslexic (at risk)": 341
+  },
+  "test_counts": {
+    "Non-dyslexic": 86,
+    "Dyslexic (at risk)": 85
+  },
+  "epochs_ran": 4,
+  "history": {
+    "loss": [
+      0.15447036425272623,
+      0.14414806606083955,
+      0.11964740012876934,
+      0.0991101397365486
+    ],
+    "accuracy": [
+      0.9378238341968912,
+      0.9499136442141624,
+      0.9516407599309153,
+      0.9671848013816926
+    ],
+    "val_loss": [
+      0.5030476488903457,
+      0.5522025642441768,
+      0.5575889372358135,
+      0.5845590905815947
+    ],
+    "val_accuracy": [
+      0.803921568627451,
+      0.803921568627451,
+      0.803921568627451,
+      0.8333333333333334
+    ],
+    "val_f1_macro": [
+      0.8032407407407407,
+      0.8032407407407407,
+      0.8032407407407407,
+      0.8333173123137556
+    ]
+  },
+  "test_accuracy": 0.8128654970760234,
+  "test_f1_macro": 0.8127053669222344,
+  "trained_mode": "retrain (warm start)",
+  "previous_metrics": {
+    "accuracy": 0.8070175438596491,
+    "precision_macro": 0.8091397849462365,
+    "recall_macro": 0.8067715458276333,
+    "f1_macro": 0.8065942351852486,
+    "sensitivity_at_risk": 0.7647058823529411,
+    "specificity": 0.8488372093023255,
+    "roc_auc": 0.8771545827633378
+  }
+}
