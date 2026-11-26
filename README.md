@@ -8,7 +8,7 @@
 
 | | Link |
 |---|---|
-| YouTube demo | _add after recording_ |
+| YouTube demo | https://youtu.be/k56zxUZnyX0 |
 | Live UI (Streamlit) | https://dyslexia-screening-ui.onrender.com/ |
 | Live API (FastAPI docs) | https://dyslexia-screening-api.onrender.com (`/docs`, health check `/health`) |
 
