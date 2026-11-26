@@ -11,6 +11,14 @@ services:
         value: "false"
       - key: RETRAIN_MIN_NEW_SAMPLES
         value: "20"
+      - key: BATCH_SIZE
+        value: "8"
+      - key: EVAL_BATCH_SIZE
+        value: "16"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: MALLOC_ARENA_MAX
+        value: "2"
 
   - type: web
     name: dyslexia-screening-ui
@@ -19,4 +27,4 @@ services:
     dockerfilePath: ./Dockerfile.ui
     envVars:
       - key: API_URL
-        sync: false   # set to the API URL, e.g. https://dyslexia-screening-api.onrender.com
+        sync: false   

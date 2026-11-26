@@ -61,7 +61,8 @@ dyslexia-screening-pipeline/
 │   ├── model.py            # MobileNetV3 transfer model, baseline CNN, training, evaluation
 │   ├── prediction.py       # single-image prediction (auto hot-reload of new models)
 │   ├── train.py            # train / retrain with quality gate
-│   └── retrain.py          # upload ingestion, retrain trigger, background job
+│   ├── retrain.py          # upload ingestion, retrain trigger, background job
+│   └── database.py         # SQLite store for uploaded images and retraining runs
 ├── data/
 │   ├── train/{non_dyslexic,dyslexic}/   # preprocessed 128x128 PNGs
 │   └── test/{non_dyslexic,dyslexic}/
@@ -126,13 +127,24 @@ jupyter nbconvert --to notebook --execute --inplace notebook/dyslexia_screening_
    * a **zip** whose folders name the class: `dyslexic/` and `non_dyslexic/` (or `Yes/` and `No/`, as in the original dataset), or
    * **many images** plus a `class_id` (0 = non-dyslexic, 1 = dyslexic).
 
-   Each file is validated, preprocessed, and added to `data/train/` and to the pending queue.
+   Each file is validated and preprocessed (128×128 grayscale), then **saved to the SQLite database** `data/pipeline.db` with status `pending`, and added to `data/train/`.
 2. **Trigger:**
    * **manual:** the *Trigger retraining* button (`POST /retrain?epochs=6`);
    * **automatic:** once ≥ 20 new images are pending (`RETRAIN_MIN_NEW_SAMPLES`), the API flags that retraining is recommended. With `AUTO_RETRAIN=true` it starts retraining on its own.
-3. **Retrain:** the current model is the starting point (warm start / pre-trained). It is fine-tuned on all training data in a background thread.
+3. **Retrain:** the pending images are **read from the database** (any missing from `data/train/` are restored from the stored image). The current model is the starting point (warm start / pre-trained), and it is fine-tuned on all training data in a background thread. The run is recorded in the database.
 4. **Quality gate:** the new model goes live only if its test macro-F1 doesn't drop by more than 0.02. Otherwise the old model is kept, and the UI shows before/after metrics.
-5. **Hot reload:** every API replica reloads the new model file without a restart, and the pending queue is archived.
+5. **Hot reload:** every API replica reloads the new model file without a restart, and the uploads it used are marked `used` (with the run id) in the database.
+
+### Database (SQLite)
+
+`src/database.py` keeps the retraining data in `data/pipeline.db` (Python's built-in `sqlite3`, so there is nothing extra to install):
+
+| Table | One row per | Main columns |
+|---|---|---|
+| `uploads` | uploaded image | original name, class, source (zip / images), preprocessed PNG (BLOB), uploaded at, status `pending` → `used`, retrain run id |
+| `retrain_runs` | retraining job | reason (button / auto), epochs, new images, before/after accuracy and F1, promoted? |
+
+You can see it in the UI (*Upload & retrain* tab), through `GET /data/uploads` and `GET /data/retrain-runs`, or by opening the file in [DB Browser for SQLite](https://sqlitebrowser.org/). On Render's free tier the disk is not persistent, so the database (like uploads and retrained models) resets when the service restarts.
 
 ## API
 
@@ -144,6 +156,8 @@ jupyter nbconvert --to notebook --execute --inplace notebook/dyslexia_screening_
 | POST | `/predict` | one image (`file`) → prediction |
 | POST | `/upload-data` | bulk zip (`archive`) or images (`files` + `class_id`) |
 | POST | `/retrain?epochs=6` | start retraining (background) |
+| GET | `/data/uploads` | uploaded images stored in the SQLite database (status, class, run id) |
+| GET | `/data/retrain-runs` | retraining history from the database |
 | GET | `/retrain/status` | job state, before/after metrics, promoted? |
 | POST | `/evaluate` | **evaluate the live model in production** on the held-out test set |
 | GET | `/visualizations/features` | per-image features for the dashboard |
@@ -156,7 +170,7 @@ Example: `curl -F "file=@data/test/dyslexic/dyslexic_0000.png" http://127.0.0.1:
 * **Sidebar:** model **up-time**, API status, current accuracy/F1, retraining-queue progress bar
 * **Predict:** upload one character image → class, at-risk probability gauge, features
 * **Visualisations:** class balance, the 3 handwriting features with interpretation, feature-space scatter
-* **Upload & retrain:** bulk upload, *Trigger retraining* button, live job status, before/after metrics
+* **Upload & retrain:** bulk upload, the uploads table from the database, *Trigger retraining* button, live job status, before/after metrics
 * **Model evaluation:** training metrics and curves, plus an *Evaluate the live model now* button (evaluation in production)
 * **Monitoring:** uptime and production latency
 

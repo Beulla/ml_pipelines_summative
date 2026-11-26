@@ -1,19 +1,9 @@
-"""Data acquisition helpers, image preprocessing and handwriting feature extraction.
+"""Image preprocessing and handwriting features.
 
-Every image (training, test, user upload, single prediction) goes through
-``preprocess_image`` so the model always sees the same representation:
-
-1. EXIF orientation fix (the photos were taken on a phone)
-2. grayscale
-3. auto-contrast (removes paper colour / lighting differences between photos,
-   so the model cannot use them as a shortcut)
-4. pad to a square with the paper colour (keeps the letter's aspect ratio)
-5. resize to IMG_SIZE x IMG_SIZE
+Every image (train, test, upload, prediction) goes through preprocess_image:
+fix phone rotation -> grayscale -> auto-contrast -> pad to square -> 128x128.
 """
 
-from __future__ import annotations
-
-import json
 from io import BytesIO
 from pathlib import Path
 
@@ -35,7 +25,6 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 CLASS_FOLDERS = {0: "non_dyslexic", 1: "dyslexic"}
 
 
-# ----------------------------------------------------------------- folders
 def ensure_class_folders(root: Path) -> None:
     for idx in range(NUM_CLASSES):
         (root / CLASS_FOLDERS[idx]).mkdir(parents=True, exist_ok=True)
@@ -67,14 +56,13 @@ def dataset_counts(root: Path) -> dict[str, int]:
     return counts
 
 
-# ------------------------------------------------------------ preprocessing
 def preprocess_image(image: Image.Image, size: int = IMG_SIZE) -> Image.Image:
-    """Return a size x size grayscale ('L') image. Idempotent."""
     image = ImageOps.exif_transpose(image).convert("L")
+    # Auto-contrast so differences in paper colour and lighting don't matter.
     image = ImageOps.autocontrast(image, cutoff=1)
     w, h = image.size
     if w != h:
-        # Paper colour = bright percentile, so padding blends into the page.
+        # Pad with the paper colour so the letter keeps its shape.
         paper = int(np.percentile(np.asarray(image), 90))
         side = max(w, h)
         canvas = Image.new("L", (side, side), paper)
@@ -95,24 +83,18 @@ def load_bytes(data: bytes, size: int = IMG_SIZE) -> Image.Image:
         return preprocess_image(img, size)
 
 
-# ------------------------------------------------------------------ features
 def ink_mask(gray: np.ndarray) -> np.ndarray:
-    """Pencil-stroke pixels: darker than halfway between the paper colour (median)
-    and the ink colour (darkest 1%). Unlike Otsu, this does not split paper
-    shadows from paper when a letter is small."""
+    """Pixels darker than halfway between the paper (median) and the ink (darkest 1%)."""
     paper = float(np.median(gray))
     ink = float(np.percentile(gray, 1))
     return gray < (paper + ink) / 2
 
 
 def extract_image_features(image: Image.Image | np.ndarray) -> dict[str, float]:
-    """Interpretable handwriting features computed on the preprocessed image.
-
-    1. ink_coverage       — share of the frame covered by pencil strokes
-                            (how big / heavy / overwritten the letter is).
-    2. stroke_darkness    — contrast between ink and paper (proxy for pen pressure).
-    3. stroke_thinness    — stroke boundary pixels per ink pixel. Thin, light single
-                            strokes score high; thick, heavy or retraced strokes score low.
+    """The 3 handwriting features used in the visualisations:
+    ink_coverage    - share of the image covered by pencil
+    stroke_darkness - ink vs paper contrast (roughly pen pressure)
+    stroke_thinness - edge pixels per ink pixel (low = thick or retraced strokes)
     """
     gray = np.asarray(image, dtype=np.float32)
     if gray.ndim == 3:
@@ -122,7 +104,7 @@ def extract_image_features(image: Image.Image | np.ndarray) -> dict[str, float]:
     paper_vals = gray[~ink]
     ink_vals = gray[ink]
 
-    # Boundary of the ink mask: ink pixels with at least one non-ink 4-neighbour.
+    # Edge pixels = ink pixels that touch at least one non-ink pixel.
     padded = np.pad(ink, 1, constant_values=False)
     interior = (
         padded[1:-1, 1:-1]
@@ -165,8 +147,3 @@ def build_feature_table(roots: list[Path] | None = None) -> pd.DataFrame:
         FEATURE_STATS_PATH.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(FEATURE_STATS_PATH, index=False)
     return df
-
-
-def save_json(path: Path, payload: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

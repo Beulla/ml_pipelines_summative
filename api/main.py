@@ -1,6 +1,4 @@
-"""FastAPI service for the dyslexia handwriting screening model: health, predict, upload, retrain, evaluate."""
-
-from __future__ import annotations
+"""FastAPI app: health check, prediction, data upload, retraining and evaluation."""
 
 import sys
 import time
@@ -18,7 +16,7 @@ from PIL import UnidentifiedImageError
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.config import (  # noqa: E402
+from src.config import (
     AUTO_RETRAIN,
     CLASS_NAMES,
     FEATURE_STATS_PATH,
@@ -30,10 +28,11 @@ from src.config import (  # noqa: E402
     TEST_DIR,
     TRAIN_DIR,
 )
-from src.model import evaluate_model, load_metrics  # noqa: E402
-from src.prediction import get_model, predict_bytes, reload_model  # noqa: E402
-from src.preprocessing import FEATURE_COLUMNS, build_feature_table, dataset_counts  # noqa: E402
-from src.retrain import (  # noqa: E402
+from src.database import connect
+from src.model import evaluate_model, load_metrics
+from src.prediction import get_model, predict_bytes, reload_model
+from src.preprocessing import FEATURE_COLUMNS, build_feature_table, dataset_counts
+from src.retrain import (
     count_uploads,
     get_status,
     ingest_zip,
@@ -74,7 +73,7 @@ def root():
         "endpoints": [
             "/health", "/model/info", "/model/history", "/predict", "/upload-data",
             "/retrain", "/retrain/status", "/evaluate", "/visualizations/stats",
-            "/visualizations/features", "/production/latency",
+            "/visualizations/features", "/production/latency", "/data/uploads", "/data/retrain-runs",
         ],
     }
 
@@ -142,7 +141,7 @@ def _feature_table():
 
 @app.get("/visualizations/features")
 def visualization_features():
-    """Per-image features (about 1,600 rows) for distribution plots in the UI."""
+    """Handwriting features for every image, used by the charts in the UI."""
     df = _feature_table()
     cols = ["label", "label_name", "split", *FEATURE_COLUMNS]
     return {"rows": df[cols].round(5).to_dict(orient="records")}
@@ -177,7 +176,7 @@ async def predict(file: UploadFile = File(...)):
         raise HTTPException(400, "File is not a readable image.") from exc
     except FileNotFoundError as exc:
         raise HTTPException(503, str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(500, f"Prediction failed: {exc}") from exc
     latency_ms = (time.perf_counter() - started) * 1000
     LATENCIES.append(latency_ms)
@@ -231,6 +230,30 @@ async def upload_data(
         "auto_retrain_started": bool(auto_job),
         "message": message,
     }
+
+
+@app.get("/data/uploads")
+def data_uploads():
+    """Uploaded images saved in the database (without the image data itself)."""
+    with connect() as conn:
+        uploads = conn.execute(
+            """SELECT id, original_name, stored_name, class_label, source, width, height,
+                      LENGTH(image_png) AS png_bytes, uploaded_at, status, retrain_run_id
+               FROM uploads ORDER BY id DESC LIMIT 200"""
+        ).fetchall()
+        total = conn.execute("SELECT COUNT(*) FROM uploads").fetchone()[0]
+        pending = conn.execute("SELECT COUNT(*) FROM uploads WHERE status = 'pending'").fetchone()[0]
+        runs = conn.execute("SELECT COUNT(*) FROM retrain_runs").fetchone()[0]
+    summary = {"total": total, "pending": pending, "used": total - pending, "retrain_runs": runs}
+    return {"summary": summary, "uploads": [dict(row) for row in uploads]}
+
+
+@app.get("/data/retrain-runs")
+def data_retrain_runs():
+    """All retraining runs saved in the database, newest first."""
+    with connect() as conn:
+        runs = conn.execute("SELECT * FROM retrain_runs ORDER BY id DESC").fetchall()
+    return {"runs": [dict(row) for row in runs]}
 
 
 @app.post("/retrain")

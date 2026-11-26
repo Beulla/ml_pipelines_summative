@@ -1,6 +1,4 @@
-"""Single-image prediction for the dyslexia handwriting screening model."""
-
-from __future__ import annotations
+"""Predict the class of one handwriting image."""
 
 import csv
 from datetime import datetime, timezone
@@ -22,8 +20,7 @@ def _current_mtime():
 
 
 def get_model():
-    """Cached model; reloads automatically when models/dyslexia_cnn.pt changes on disk,
-    so every API container picks up a retrained model from the shared volume."""
+    """Load the model once and reload it if the model file changes (after retraining)."""
     global _model, _model_mtime
     mtime = _current_mtime()
     if _model is None or mtime != _model_mtime:
@@ -40,7 +37,6 @@ def reload_model():
 
 
 def predict_image(image: Image.Image, model=None) -> dict:
-    """``image`` must already be preprocessed (preprocessing.preprocess_image)."""
     model = model or get_model()
     probs = predict_proba(model, image)[0]
     class_id = int(probs.argmax())

@@ -1,16 +1,11 @@
-"""Train (or retrain) the handwriting classifier from folder-structured images.
+"""Train or retrain the model.
 
-Initial training:   python -m src.train
-Retraining (warm):  python -m src.train --epochs 8 --retrain
+    python -m src.train                       # first training
+    python -m src.train --epochs 8 --retrain  # fine-tune the current model
 
-Retraining fine-tunes the current production weights on everything in
-data/train (original images + user uploads), evaluates the candidate on the
-held-out test set, and only promotes it when macro F1 does not drop by more
-than PROMOTE_TOLERANCE. That keeps a bad batch of uploads from silently
-replacing a good model.
+A retrained model only replaces the current one if its macro F1 on the test
+set does not drop by more than PROMOTE_TOLERANCE.
 """
-
-from __future__ import annotations
 
 import argparse
 import json
@@ -38,11 +33,6 @@ def _public(metrics: dict) -> dict:
     return {k: v for k, v in metrics.items() if not k.startswith("_")}
 
 
-def _summary(metrics: dict) -> dict:
-    keys = ("accuracy", "precision_macro", "recall_macro", "f1_macro", "sensitivity_at_risk", "specificity", "roc_auc")
-    return {k: metrics.get(k) for k in keys}
-
-
 def run_training(
     epochs: int = EPOCHS,
     batch_size: int = BATCH_SIZE,
@@ -57,7 +47,11 @@ def run_training(
     test_counts = dataset_counts(TEST_DIR)
 
     warm = MODEL_PATH if (retrain and MODEL_PATH.exists()) else None
-    previous = _summary(load_metrics()) if warm else {}
+    previous = {}
+    if warm:
+        old = load_metrics()
+        for k in ("accuracy", "precision_macro", "recall_macro", "f1_macro", "sensitivity_at_risk", "specificity", "roc_auc"):
+            previous[k] = old.get(k)
 
     CANDIDATE_DIR.mkdir(parents=True, exist_ok=True)
     candidate_path = CANDIDATE_DIR / MODEL_PATH.name

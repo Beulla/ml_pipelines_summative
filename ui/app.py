@@ -1,7 +1,5 @@
 """Streamlit UI: up-time, prediction, visualisations, upload + retrain, evaluation."""
 
-from __future__ import annotations
-
 import os
 import time
 
@@ -35,7 +33,7 @@ def api_get(path: str, timeout: int = 30):
         r = requests.get(f"{API}{path}", timeout=timeout)
         r.raise_for_status()
         return r.json(), None
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return None, str(exc)
 
 
@@ -44,7 +42,7 @@ def api_post(path: str, timeout: int = 120, **kwargs):
         r = requests.post(f"{API}{path}", timeout=timeout, **kwargs)
         body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"text": r.text}
         return (body, None) if r.ok else (None, body.get("detail", body))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return None, str(exc)
 
 
@@ -76,7 +74,6 @@ METRIC_LABELS = [
 health, health_err = api_get("/health")
 info, _ = api_get("/model/info")
 
-# --------------------------------------------------------------------- sidebar
 with st.sidebar:
     st.subheader("Model up-time")
     if health:
@@ -109,7 +106,6 @@ tabs = st.tabs(
     ["🔍 Predict", "📊 Visualisations", "⬆️ Upload & retrain", "✅ Model evaluation", "⏱ Monitoring"]
 )
 
-# --------------------------------------------------------------------- predict
 with tabs[0]:
     st.markdown(
         "Upload a photo or scan of **one handwritten character** (letter or digit) by a child. "
@@ -148,7 +144,6 @@ with tabs[0]:
         else:
             st.error(err)
 
-# --------------------------------------------------------------- visualisations
 with tabs[1]:
     data, err = api_get("/visualizations/features", timeout=180)
     if err:
@@ -227,7 +222,6 @@ does much better than these features alone.
         st.plotly_chart(fig, width="stretch")
         st.caption("The two clouds sit on top of each other: hand-crafted features alone cannot screen reliably.")
 
-# -------------------------------------------------------------- upload/retrain
 with tabs[2]:
     st.markdown(
         "**Step 1: upload bulk labelled data.** Either a **zip** with one folder per class "
@@ -260,6 +254,37 @@ with tabs[2]:
             else:
                 st.error(err)
 
+    st.markdown(
+        "**Saved in the database.** Each uploaded image is preprocessed (128×128 grayscale) and stored "
+        "in SQLite (`data/pipeline.db`) as **pending**. Retraining reads the pending images from the "
+        "database and marks them **used** once the retrained model goes live."
+    )
+    db_data, db_err = api_get("/data/uploads")
+    if db_data:
+        summ = db_data["summary"]
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Images in database", summ["total"])
+        m2.metric("Pending (not yet trained on)", summ["pending"])
+        m3.metric("Used by a retrained model", summ["used"])
+        m4.metric("Retraining runs", summ["retrain_runs"])
+        if db_data["uploads"]:
+            st.dataframe(
+                pd.DataFrame(db_data["uploads"])[
+                    ["id", "original_name", "class_label", "source", "width", "height", "png_bytes",
+                     "uploaded_at", "status", "retrain_run_id"]
+                ],
+                hide_index=True,
+                height=240,
+            )
+        else:
+            st.caption("No uploads yet.")
+        runs, _ = api_get("/data/retrain-runs")
+        if runs and runs["runs"]:
+            with st.expander("Retraining runs (from the database)"):
+                st.dataframe(pd.DataFrame(runs["runs"]), hide_index=True)
+    else:
+        st.caption(f"Database not reachable: {db_err}")
+
     st.divider()
     st.markdown(
         "**Step 2: retrain.** The current model is **fine-tuned** on all training data, including your "
@@ -288,7 +313,6 @@ with tabs[2]:
             time.sleep(5)
             st.rerun()
 
-# ------------------------------------------------------------------ evaluation
 with tabs[3]:
     st.markdown("Metrics recorded when the current model was trained, and a **live evaluation** run inside the deployed API.")
     if info and info.get("metrics"):
@@ -331,7 +355,6 @@ with tabs[3]:
         else:
             st.error(err)
 
-# ------------------------------------------------------------------ monitoring
 with tabs[4]:
     lat, err = api_get("/production/latency")
     if lat:

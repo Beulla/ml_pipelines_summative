@@ -5,8 +5,8 @@ data/raw/*
 
 # data/train and data/test (preprocessed 128x128 PNGs, ~10 MB) ARE committed:
 # the deployed API needs them for retraining and live evaluation.
-data/uploads/
-data/uploads_used/
+data/pipeline.db
+data/pipeline.db-journal
 data/feature_stats.csv
 
 # Production model files (.pt / .pkl, ~6 MB each) ARE committed. Scratch models are not.

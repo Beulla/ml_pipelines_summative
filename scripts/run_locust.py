@@ -1,11 +1,10 @@
-"""Headless Locust flood tests; appends a summary row per run to locust/results/summary.csv.
+"""Run Locust load tests without the web UI and save the results.
 
-    # API running on :8000 with N containers / workers
     python scripts/run_locust.py --host http://127.0.0.1:8000 --containers 1 --users 10,50,100 --time 60s
-    python scripts/run_locust.py --table      # print the markdown table of all runs
-"""
+    python scripts/run_locust.py --table      # print the results table
 
-from __future__ import annotations
+Each run adds one row to locust/results/summary.csv.
+"""
 
 import argparse
 import csv
@@ -19,43 +18,6 @@ OUT = ROOT / "locust" / "results"
 SUMMARY = OUT / "summary.csv"
 FIELDS = ["ran_at", "setup", "containers", "users", "duration", "requests", "failures",
           "median_ms", "p95_ms", "p99_ms", "avg_ms", "max_ms", "rps"]
-
-
-def run_one(users: int, time_s: str, host: str, containers: str, setup: str) -> dict:
-    OUT.mkdir(parents=True, exist_ok=True)
-    prefix = OUT / f"{setup}_c{containers}_u{users}"
-    cmd = [
-        sys.executable, "-m", "locust", "-f", str(ROOT / "locust" / "locustfile.py"),
-        "--headless", "-u", str(users), "-r", str(max(1, users // 5)), "-t", time_s,
-        "--host", host, "--csv", str(prefix), "--html", str(prefix) + ".html", "--only-summary",
-    ]
-    print(">>", " ".join(cmd), flush=True)
-    subprocess.run(cmd, check=False, cwd=ROOT)
-    with open(f"{prefix}_stats.csv", newline="", encoding="utf-8") as fh:
-        row = next(r for r in csv.DictReader(fh) if r["Name"] == "/predict")
-    result = {
-        "ran_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "setup": setup,
-        "containers": containers,
-        "users": users,
-        "duration": time_s,
-        "requests": int(row["Request Count"]),
-        "failures": int(row["Failure Count"]),
-        "median_ms": float(row["Median Response Time"]),
-        "p95_ms": float(row["95%"]),
-        "p99_ms": float(row["99%"]),
-        "avg_ms": round(float(row["Average Response Time"]), 1),
-        "max_ms": round(float(row["Max Response Time"]), 1),
-        "rps": round(float(row["Requests/s"]), 2),
-    }
-    new = not SUMMARY.exists()
-    with SUMMARY.open("a", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=FIELDS)
-        if new:
-            writer.writeheader()
-        writer.writerow(result)
-    print(result, flush=True)
-    return result
 
 
 def table() -> str:
@@ -84,8 +46,42 @@ def main():
     if args.table:
         print(table())
         return
+
+    OUT.mkdir(parents=True, exist_ok=True)
     for users in [int(x) for x in args.users.split(",")]:
-        run_one(users, args.time, args.host, args.containers, args.setup)
+        prefix = OUT / f"{args.setup}_c{args.containers}_u{users}"
+        cmd = [
+            sys.executable, "-m", "locust", "-f", str(ROOT / "locust" / "locustfile.py"),
+            "--headless", "-u", str(users), "-r", str(max(1, users // 5)), "-t", args.time,
+            "--host", args.host, "--csv", str(prefix), "--html", str(prefix) + ".html", "--only-summary",
+        ]
+        print(">>", " ".join(cmd), flush=True)
+        subprocess.run(cmd, check=False, cwd=ROOT)
+
+        with open(f"{prefix}_stats.csv", newline="", encoding="utf-8") as fh:
+            row = next(r for r in csv.DictReader(fh) if r["Name"] == "/predict")
+        result = {
+            "ran_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "setup": args.setup,
+            "containers": args.containers,
+            "users": users,
+            "duration": args.time,
+            "requests": int(row["Request Count"]),
+            "failures": int(row["Failure Count"]),
+            "median_ms": float(row["Median Response Time"]),
+            "p95_ms": float(row["95%"]),
+            "p99_ms": float(row["99%"]),
+            "avg_ms": round(float(row["Average Response Time"]), 1),
+            "max_ms": round(float(row["Max Response Time"]), 1),
+            "rps": round(float(row["Requests/s"]), 2),
+        }
+        new_file = not SUMMARY.exists()
+        with SUMMARY.open("a", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=FIELDS)
+            if new_file:
+                writer.writeheader()
+            writer.writerow(result)
+        print(result, flush=True)
     print(table())
 
 

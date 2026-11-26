@@ -8,14 +8,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
 TRAIN_DIR = DATA_DIR / "train"
 TEST_DIR = DATA_DIR / "test"
-UPLOAD_DIR = DATA_DIR / "uploads"
-USED_UPLOAD_DIR = DATA_DIR / "uploads_used"
+DB_PATH = Path(os.environ.get("DB_PATH", DATA_DIR / "pipeline.db"))
 RAW_DIR = DATA_DIR / "raw"
 MODELS_DIR = PROJECT_ROOT / "models"
 LOGS_DIR = PROJECT_ROOT / "logs"
 
-IMG_SIZE = 128           # handwriting images are normalised to 128x128 grayscale
-BATCH_SIZE = 32
+IMG_SIZE = 128
+# Set smaller on Render so retraining fits in 512 MB of RAM.
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "32"))
+EVAL_BATCH_SIZE = int(os.environ.get("EVAL_BATCH_SIZE", "64"))
 EPOCHS = 30
 RETRAIN_EPOCHS = 6
 TEST_FRACTION = 0.2
@@ -27,7 +28,6 @@ CLASS_NAMES = {
     1: "Dyslexic (at risk)",
 }
 
-# Folder names accepted for labelled uploads (zip folders or class pickers).
 CLASS_FOLDER_ALIASES = {
     "0": 0,
     "no": 0,
@@ -54,12 +54,9 @@ RETRAIN_STATUS_PATH = LOGS_DIR / "retrain_status.json"
 PRODUCTION_EVAL_PATH = LOGS_DIR / "production_eval.json"
 
 RETRAIN_MIN_NEW_SAMPLES = int(os.environ.get("RETRAIN_MIN_NEW_SAMPLES", "20"))
-# When true, an upload that pushes pending samples past the threshold starts
-# retraining automatically (the "trigger when the need arises").
+# If true, retraining starts by itself once RETRAIN_MIN_NEW_SAMPLES new images are uploaded.
 AUTO_RETRAIN = os.environ.get("AUTO_RETRAIN", "false").lower() in {"1", "true", "yes"}
 
-# Data source: Multilingual AI-Based Dyslexia Detection (Mendeley Data, CC BY 4.0)
-# DOI 10.17632/b37s8b94nv.1 — 852 character images from 100 children aged 6-10.
 DATASET_DOI = "10.17632/b37s8b94nv.1"
 DATASET_ZIP_URL = (
     "https://data.mendeley.com/public-files/datasets/b37s8b94nv/files/"
