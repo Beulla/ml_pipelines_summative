@@ -9,8 +9,8 @@
 | | Link |
 |---|---|
 | YouTube demo | _add after recording_ |
-| Live UI (Streamlit) | _add after deploy_ |
-| Live API (FastAPI docs) | _add after deploy_ (`/docs`, health check `/health`) |
+| Live UI (Streamlit) | https://dyslexia-screening-ui.onrender.com/ |
+| Live API (FastAPI docs) | https://dyslexia-screening-api.onrender.com (`/docs`, health check `/health`) |
 
 ## Project description
 
