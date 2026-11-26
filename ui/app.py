@@ -20,12 +20,7 @@ FEATURES = {
 
 st.set_page_config(page_title="Dyslexia Screening Pipeline", page_icon="✏️", layout="wide")
 st.title("Early dyslexia screening from children's handwriting")
-st.caption(
-    "Builds on my Introduction to ML project, *Early Identification of At-Risk Learners* (OULAD). "
-    "Same goal (find learners who need support before they fall behind), but the data is now "
-    "**images of single handwritten characters** from children aged 6–10. "
-    "Educational prototype: a screening aid, **not a diagnosis**."
-)
+st.caption("Screens one handwritten character for signs of dyslexia. A screening aid, **not a diagnosis**.")
 
 
 def api_get(path: str, timeout: int = 30):
@@ -67,11 +62,12 @@ METRIC_LABELS = [
     ("precision_macro", "Precision"),
     ("recall_macro", "Recall"),
     ("f1_macro", "F1 (macro)"),
-    ("sensitivity_at_risk", "Sensitivity (at-risk caught)"),
+    ("sensitivity_at_risk", "Sensitivity"),
     ("roc_auc", "ROC-AUC"),
 ]
 
-health, health_err = api_get("/health")
+with st.spinner("Connecting to the API (up to a minute if it was asleep)…"):
+    health, health_err = api_get("/health", timeout=90)
 info, _ = api_get("/model/info")
 
 with st.sidebar:
@@ -80,25 +76,21 @@ with st.sidebar:
         st.metric("API status", "🟢 UP" if health["status"] == "ok" else "🔴 DOWN")
         st.metric("Uptime", fmt_uptime(health["uptime_seconds"]))
         st.caption(f"Started (UTC): {health['started_at'][:19]}")
-        st.caption(f"Model file present: {health['model_loaded']}")
     else:
-        st.error("API unreachable")
-        st.caption(health_err)
-    st.caption(f"API: `{API}`")
+        st.error("API unreachable. Wait a moment and press Refresh.")
 
     if info:
         m = info.get("metrics") or {}
         if m:
-            st.subheader("Current model (test set)")
+            st.subheader("Current model")
             c1, c2 = st.columns(2)
             c1.metric("Accuracy", f"{m.get('accuracy', 0):.3f}")
             c2.metric("F1 (macro)", f"{m.get('f1_macro', 0):.3f}")
-        st.subheader("Retraining queue")
+        st.subheader("New images")
         pending, threshold = info.get("uploads_pending", 0), info.get("retrain_threshold", 20)
-        st.progress(min(pending / max(threshold, 1), 1.0), text=f"{pending}/{threshold} new images")
+        st.progress(min(pending / max(threshold, 1), 1.0), text=f"{pending}/{threshold} before retraining")
         if info.get("retrain_recommended"):
-            st.warning("Enough new data — retraining recommended.")
-        st.caption(f"Auto-retrain: {'on' if info.get('auto_retrain_enabled') else 'off'}")
+            st.warning("Retraining recommended.")
     if st.button("Refresh"):
         st.rerun()
 
@@ -107,10 +99,7 @@ tabs = st.tabs(
 )
 
 with tabs[0]:
-    st.markdown(
-        "Upload a photo or scan of **one handwritten character** (letter or digit) by a child. "
-        "The model returns the probability that the writing pattern matches the **dyslexic** group."
-    )
+    st.markdown("Upload an image of **one handwritten character**.")
     uploaded = st.file_uploader("Handwritten character image", type=["png", "jpg", "jpeg", "bmp", "webp"])
     if uploaded and st.button("Run prediction", type="primary"):
         with st.spinner("Scoring image…"):
@@ -134,13 +123,9 @@ with tabs[0]:
                 ))
                 fig.update_layout(height=260, margin=dict(l=20, r=20, t=50, b=10))
                 st.plotly_chart(fig, width="stretch")
-                st.caption(f"API latency {result.get('latency_ms')} ms")
-            with st.expander("Handwriting features computed for this image"):
+                st.caption(f"Response time: {result.get('latency_ms')} ms")
+            with st.expander("Handwriting features"):
                 st.json(result["features"])
-            st.info(
-                "One character is weak evidence. In practice a teacher would screen many characters "
-                "per child and refer for a proper assessment, never label a child from one image."
-            )
         else:
             st.error(err)
 
@@ -152,7 +137,7 @@ with tabs[1]:
         df = pd.DataFrame(data["rows"])
         df["group"] = pd.Categorical(df["label_name"], categories=CLASS_LABELS, ordered=True)
 
-        st.subheader("1 · Who is in the dataset?")
+        st.subheader("1 · The dataset")
         c1, c2 = st.columns([1, 2])
         counts = df.groupby(["group", "split"], observed=True).size().reset_index(name="images")
         with c1:
@@ -162,16 +147,8 @@ with tabs[1]:
             st.plotly_chart(fig, width="stretch")
         with c2:
             st.markdown(
-                f"""
-The data holds **{len(df)} single-character images** from **100 children aged 6–10** in schools in
-Punjab, Pakistan: English letters, Urdu letters and digits. The two groups are **balanced by
-design**, with half the images from children identified as dyslexic. The model therefore isn't
-biased toward either answer.
-
-A real classroom isn't balanced: roughly 5–10 % of children have dyslexia. Accuracy on
-balanced data overstates how useful a screener is, so we also report **sensitivity** (how many
-at-risk children we catch) and **specificity** (how many we correctly leave alone).
-"""
+                f"**{len(df)} images** of single characters from **100 children aged 6–10**. "
+                "The two classes are **balanced**, 50/50."
             )
 
         st.subheader("2 · Three handwriting features")
@@ -191,43 +168,27 @@ at-risk children we catch) and **specificity** (how many we correctly leave alon
 
         st.markdown(
             """
-**What each feature means**
+- **Ink coverage:** dyslexic group writes slightly **bigger, heavier** letters.
+- **Stroke darkness** (pen pressure): dyslexic group writes slightly **lighter**.
+- **Stroke thinness:** dyslexic group has **thicker, retraced** strokes.
 
-- **Ink coverage**: the share of the image that is pencil stroke, i.e. how large and heavy the
-  letter is. Letters from the dyslexic group cover **slightly more** of the frame. That fits
-  larger, less controlled letter forms and overwriting.
-- **Stroke darkness**: the contrast between pencil and paper, a proxy for pen pressure. The
-  dyslexic group writes **a little lighter** (median 0.65 vs 0.70). Uneven or light pressure is
-  a known feature of effortful handwriting.
-- **Stroke thinness**: stroke-edge pixels per ink pixel. Thin, single, confident strokes score
-  high; thick, retraced or gone-over strokes score low. The dyslexic group scores **lower**,
-  which fits children going back over letters they are unsure of.
-
-**The story:** every difference points the same way, toward *effortful, less automatic writing*.
-But the boxes **overlap almost completely**: on its own, each feature separates the groups only a
-little better than chance (AUC 0.47–0.54). Dyslexia doesn't show up as a simple ink statistic.
-It shows up in the **shape** of letters: reversals (b/d, p/q, mirrored digits), malformed
-strokes, odd proportions. That is why a CNN that looks at letter shape is needed, and why it
-does much better than these features alone.
+**Story:** all three point to *effortful writing*, but the groups overlap a lot. Dyslexia shows in
+letter **shape**, which is why the CNN works much better than these features.
 """
         )
 
         st.subheader("3 · Feature space")
         fig = px.scatter(
             df, x="stroke_darkness", y="stroke_thinness", color="group", color_discrete_map=COLORS,
-            opacity=0.55, title="Pen pressure vs stroke thinness, coloured by group",
+            opacity=0.55, title="Pen pressure vs stroke thinness",
             labels={"stroke_darkness": "Stroke darkness", "stroke_thinness": "Stroke thinness", "group": ""},
         )
         fig.update_layout(height=420)
         st.plotly_chart(fig, width="stretch")
-        st.caption("The two clouds sit on top of each other: hand-crafted features alone cannot screen reliably.")
+        st.caption("The groups overlap, so these features alone can't screen reliably.")
 
 with tabs[2]:
-    st.markdown(
-        "**Step 1: upload bulk labelled data.** Either a **zip** with one folder per class "
-        "(`dyslexic` / `non_dyslexic`, or `Yes` / `No` as in the original dataset), or **many images** "
-        "that belong to one class."
-    )
+    st.markdown("**Step 1 · Upload data:** a zip with `Yes` / `No` folders, or several images of one class.")
     c1, c2 = st.columns(2)
     with c1:
         zip_file = st.file_uploader("Zip of class folders", type=["zip"])
@@ -254,24 +215,19 @@ with tabs[2]:
             else:
                 st.error(err)
 
-    st.markdown(
-        "**Saved in the database.** Each uploaded image is preprocessed (128×128 grayscale) and stored "
-        "in SQLite (`data/pipeline.db`) as **pending**. Retraining reads the pending images from the "
-        "database and marks them **used** once the retrained model goes live."
-    )
+    st.markdown("**Database** · uploads are saved as **pending**, then marked **used** after retraining.")
     db_data, db_err = api_get("/data/uploads")
     if db_data:
         summ = db_data["summary"]
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Images in database", summ["total"])
-        m2.metric("Pending (not yet trained on)", summ["pending"])
-        m3.metric("Used by a retrained model", summ["used"])
+        m1.metric("Images", summ["total"])
+        m2.metric("Pending", summ["pending"])
+        m3.metric("Used", summ["used"])
         m4.metric("Retraining runs", summ["retrain_runs"])
         if db_data["uploads"]:
             st.dataframe(
                 pd.DataFrame(db_data["uploads"])[
-                    ["id", "original_name", "class_label", "source", "width", "height", "png_bytes",
-                     "uploaded_at", "status", "retrain_run_id"]
+                    ["id", "original_name", "class_label", "source", "uploaded_at", "status", "retrain_run_id"]
                 ],
                 hide_index=True,
                 height=240,
@@ -280,18 +236,17 @@ with tabs[2]:
             st.caption("No uploads yet.")
         runs, _ = api_get("/data/retrain-runs")
         if runs and runs["runs"]:
-            with st.expander("Retraining runs (from the database)"):
+            with st.expander("Retraining runs"):
                 st.dataframe(pd.DataFrame(runs["runs"]), hide_index=True)
     else:
         st.caption(f"Database not reachable: {db_err}")
 
     st.divider()
     st.markdown(
-        "**Step 2: retrain.** The current model is **fine-tuned** on all training data, including your "
-        "uploads. Before going live it must pass a **quality gate**: it replaces the current model only "
-        "if its macro F1 on the held-out test set doesn't drop by more than 0.02."
+        "**Step 2 · Retrain:** fine-tunes the current model. The new model is kept only if its F1 "
+        "doesn't drop by more than 0.02."
     )
-    epochs = st.slider("Retraining epochs", 1, 15, 6)
+    epochs = st.slider("Epochs", 1, 10, 2)
     if st.button("🚀 Trigger retraining", type="primary"):
         body, err = api_post("/retrain", params={"epochs": epochs}, timeout=30)
         st.json(body or {"error": err})
@@ -300,21 +255,20 @@ with tabs[2]:
     if status:
         state = status.get("state")
         box = {"running": st.info, "complete": st.success, "error": st.error}.get(state, st.write)
-        box(f"**Retrain job: {state}** — {status.get('message', '')}")
+        box(f"**Retraining: {state}**. {status.get('message', '')}")
         if state == "complete" and status.get("previous_f1_macro") is not None:
             c1, c2, c3 = st.columns(3)
-            c1.metric("F1 macro (new)", f"{status['f1_macro']:.3f}",
+            c1.metric("F1 (new)", f"{status['f1_macro']:.3f}",
                       f"{status['f1_macro'] - status['previous_f1_macro']:+.3f}")
             c2.metric("Accuracy (new)", f"{status['accuracy']:.3f}",
                       f"{status['accuracy'] - status['previous_accuracy']:+.3f}")
-            c3.metric("Promoted", "yes" if status.get("promoted") else "no (kept old model)")
+            c3.metric("New model kept", "yes" if status.get("promoted") else "no")
         if state == "running":
-            st.caption("Training runs in the background. This page refreshes every 5 s.")
+            st.caption("Refreshing every 5 s…")
             time.sleep(5)
             st.rerun()
 
 with tabs[3]:
-    st.markdown("Metrics recorded when the current model was trained, and a **live evaluation** run inside the deployed API.")
     if info and info.get("metrics"):
         m = info["metrics"]
         cols = st.columns(len(METRIC_LABELS))
@@ -323,7 +277,7 @@ with tabs[3]:
         c1, c2 = st.columns(2)
         with c1:
             if info.get("confusion_matrix"):
-                st.plotly_chart(confusion_fig(info["confusion_matrix"], "Confusion matrix at training time"),
+                st.plotly_chart(confusion_fig(info["confusion_matrix"], "Confusion matrix"),
                                 width="stretch")
         hist, _ = api_get("/model/history")
         with c2:
@@ -341,11 +295,11 @@ with tabs[3]:
                 st.plotly_chart(fig, width="stretch")
 
     st.divider()
-    if st.button("▶ Evaluate the live model now (in production)", type="primary"):
-        with st.spinner("Running the deployed model on the held-out test images…"):
+    if st.button("▶ Evaluate the live model", type="primary"):
+        with st.spinner("Evaluating on the test images…"):
             ev, err = api_post("/evaluate", timeout=300)
         if ev:
-            st.success(f"Evaluated {ev['n_test']} images in {ev['eval_seconds']} s at {ev['evaluated_at'][:19]} UTC")
+            st.success(f"Evaluated {ev['n_test']} test images in {ev['eval_seconds']} s")
             cols = st.columns(len(METRIC_LABELS))
             for col, (k, label) in zip(cols, METRIC_LABELS):
                 col.metric(label, f"{ev[k]:.3f}" if ev.get(k) is not None else "–")
@@ -361,15 +315,11 @@ with tabs[4]:
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Uptime", fmt_uptime(lat.get("uptime_seconds") or (health or {}).get("uptime_seconds", 0)))
         c2.metric("Predictions served", lat.get("n"))
-        c3.metric("Mean latency (ms)", lat.get("mean_ms") or "–")
-        c4.metric("p95 latency (ms)", lat.get("p95_ms") or "–")
-        st.caption(
-            "Server-side /predict latency over the last 500 requests in the replica that answered. "
-            "Locust flood-test results are in the README."
-        )
+        c3.metric("Mean response (ms)", lat.get("mean_ms") or "–")
+        c4.metric("p95 response (ms)", lat.get("p95_ms") or "–")
     else:
         st.error(err)
     if info:
-        st.markdown("**Images on disk**")
+        st.markdown("**Images**")
         st.dataframe(pd.DataFrame({"train": info["train_counts"], "test": info["test_counts"]}),
                      width="stretch")
